@@ -1,3 +1,14 @@
+#include <Arduino.h>
+#include<Wire.h>
+#include<SPI.h>
+#include<SD.h>
+#include"RTClib.h"
+String gen_date_stamp(DateTime now);
+String read_temperature(void);
+String read_moisture(void);
+void setup(void);
+void loop ();
+#line 1 "src/sketch.ino"
 /* Temperature and humidity Logger
  *  
  * Date and time functions using a DS1307 RTC connected via I2C and Wire lib
@@ -6,10 +17,10 @@
  * Temperature sensor on ADC1
  */
 
-#include<Wire.h>
-#include<SPI.h>
-#include<SD.h>
-#include"RTClib.h"
+//#include<Wire.h>
+//#include<SPI.h>
+//#include<SD.h>
+//#include"RTClib.h"
  
 // Defines
 #define TEMPERATURE     A0
