@@ -1,4 +1,4 @@
-/* TH_Logger
+/* TM_Logger
  *  
  * A datalogger for soil moisture and temperature.
  * Date and time functions are working using a DS1307 RTC connected via I2C.
