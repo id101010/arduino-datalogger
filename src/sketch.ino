@@ -1,4 +1,4 @@
-/* TM_Logger
+/* Temperature and moisture logger
  *  
  * A datalogger for soil moisture and temperature.
  * Date and time functions are working using a DS1307 RTC connected via I2C.
@@ -9,7 +9,7 @@
  *
  * Developer: aaron@duckpond.ch
  *
- * TODO: Enable sleepmode and figure out a way to wake the controller up in a given interval
+ * TODO: Convert the sleepmode and wdt stuff from plain c to arduino language.
  */
 
 #include<Wire.h>
@@ -17,11 +17,23 @@
 #include<SD.h>
 #include"RTClib.h"
 #include <avr/pgmspace.h>
+#include <avr/sleep.h>
+#include <avr/wdt.h>
+
+// Makros
+#ifndef cbi
+#define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
+#endif
+
+#ifndef sbi
+#define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
+#endif
  
 // Defines
 #define TEMPERATURE     A0
 #define MOISTURE        A1
 #define CHIPSELECT      10
+#define SLEEPTIME       9 
 
 // Lookuptable, where index [i] = °C, adc values from -10°C to 100°C
 //TODO: Make sure this stuff goes to PROGMEM
@@ -31,7 +43,88 @@ const int adc_values[] = {192,199,207,215,224,232,241,250,258,268,277,286,296,30
 RTC_DS1307 RTC;
 String dateStamp = "";
 File logFile;
+volatile boolean flag_wdt = true;
 
+/***************************************************
+ *  Name:        ISR(WDT_vect)
+ *
+ *  Returns:     Nothing
+ *
+ *  Parameters:  Nothing
+ *
+ *  Description: Interrupt service routine for the 
+ *               Watchdog timer.
+ *
+ ***************************************************/
+ISR(WDT_vect) {
+  flag_wdt = true;  // set global flag
+}
+
+/***************************************************
+ *  Name:        setup_watchdog()
+ *
+ *  Returns:     Nothing
+ *
+ *  Parameters:  int timeout
+ *
+ *  Description: Sets up the watchtog timer to time out 
+ *               in one of the following intervals:
+ *               0=16ms, 1=32ms,2=64ms,3=128ms,4=250ms,
+ *               5=500ms, 6=1s, 7=2s, 8=4s, 9=8s
+ ***************************************************/
+void setup_watchdog(int timeout) 
+{
+    byte bb;
+    int ww;
+
+    // Set max value
+    if (timeout > 9 ){
+        timeout = 9;
+    }
+
+    bb = timeout & 7;
+
+    if (timeout > 7){
+         bb |= (1<<5);
+    }
+    
+    bb |= (1<<WDCE);
+    ww = bb;
+
+    MCUSR &= ~(1<<WDRF);
+
+    // start timed sequence
+    WDTCSR |= (1<<WDCE) | (1<<WDE);
+
+    // set new watchdog timeout value
+    WDTCSR = bb;
+    WDTCSR |= _BV(WDIE);
+}
+
+// set system into the sleep state 
+// system wakes up when wtchdog is timed out
+
+/***************************************************
+ *  Name:        system_sleep()
+ *
+ *  Returns:     nothing
+ *
+ *  Parameters:  nothing
+ *
+ *  Description: Set the system to sleep state until the 
+ *               watchdog timer times out.
+ *
+ ***************************************************/
+void system_sleep(void) 
+{
+  cbi(ADCSRA,ADEN);                    // Turn adc OFF
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN); // Set the sleep mode
+  sleep_enable();                      // enable sleep mode
+  sleep_mode();                        // System sleeps here
+
+  sleep_disable();                     // System continues execution only when the wdt timed out 
+  sbi(ADCSRA,ADEN);                    // switch adc back ON
+}
 
 
 /***************************************************
@@ -149,13 +242,20 @@ void setup(void)
     }
 
     // Open the logfile on the SDcard
-    logFile = SD.open("logfile.txt", FILE_WRITE);
+    logFile = SD.open("logfile.csv", FILE_WRITE);
     
     // Check if logfile is readable
     if(!logFile){
         Serial.println("[ERROR]: Logfile corrupted!");
         while(1);   // Error case, do nothing
     }
+
+    // Set up the sleep mode
+    cbi(SMCR,SE);               // sleep enable, power down mode
+    cbi(SMCR,SM0);              // power down mode
+    sbi(SMCR,SM1);              // power down mode
+    cbi(SMCR,SM2);              // power down mode
+    setup_watchdog(SLEEPTIME);
      
 }
 
@@ -171,15 +271,19 @@ void setup(void)
  ***************************************************/
 void loop(void) 
 {
-    DateTime now = RTC.now();           // Read Time
-    
-    dateStamp = gen_date_stamp(now);    // Generate date stamp
-    dateStamp += read_temperature();
-    dateStamp += read_moisture();
+    // Only do something when the wdt timeout occurs
+    if(flag_wdt){
+        flag_wdt = false;                   // Reset the global flag
+        DateTime now = RTC.now();           // Read Time
+        
+        dateStamp = gen_date_stamp(now);    // Generate date stamp
+        dateStamp += read_temperature();
+        dateStamp += read_moisture();
 
-    //Serial.println(dateStamp);        // Debug on serial port
-    logFile.println(dateStamp);         // Write data to the logfile
-    logFile.flush();                    // Save changes on the sdcard
-
-    delay(5000);
+        Serial.println(dateStamp);          // Debug on serial port
+        logFile.println(dateStamp);         // Write data to the logfile
+        logFile.flush();                    // Save changes on the sdcard
+    }else{
+        system_sleep();
+    }
 }
