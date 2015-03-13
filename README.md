@@ -3,7 +3,7 @@ Temperature and moisture Logger
 
 ## Synopsys
 
-The projects aim is to create a lowcost device for measuring soil moisture and temperature. Such a device can be used to log soil data for long times in order to optimize the plants growth.
+The projects aim is to create a lowcost device for measuring soil moisture and temperature. Such a device can be used to log soil data for long times in order to optimize the plants growth. The date and time functions are implemented based on a DS1307 RTC connected via I2C. The data are logged on a FAT16/32 formatted SD card in csv format.
 
 ## Hardware
 

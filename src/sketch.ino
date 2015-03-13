@@ -18,92 +18,124 @@
 #include"RTClib.h"
 #include <avr/pgmspace.h>
  
-// Some Defines
+// Defines
 #define TEMPERATURE     A0
 #define MOISTURE        A1
 #define CHIPSELECT      10
 
-// Lookuptable 
-//TODO: Fix this with the new calculated values 
+// Lookuptable, where index [i] = °C, adc values from -10°C to 100°C
 //TODO: Make sure this stuff goes to PROGMEM
-const int adc_values[] = {289,299,309,319,329,340,351,362,373,385,397,409,421,433,446,459,472,485,499,512,526,539,553,567,581,594,608,622,636,649,663,676,690,703,716,728,741,753,765,777,789,800,811,821,832,842,851,861,870,878,887,895,902,910,917,923,930,936,942,947,952,957,962,966,970,974,978,981,984,987,990,993,995,997,1000,1002,1003,1005,1007,1008,1010,1011,1012,1013,1014,1015,1016,1017,1017,1018,1018,1019,1019,1020,1020,1021,1021,1021,1022,1022,1022,1022,1022,1023,1023,1023,1023,1023,1023,1023,1023,1024};
+const int adc_values[] = {192,199,207,215,224,232,241,250,258,268,277,286,296,305,315,325,335,344,355,365,375,385,395,406,416,426,437,447,458,468,478,489,499,509,519,529,539,549,559,569,579,588,598,607,617,626,635,644,653,661,670,678,686,695,703,711,718,726,733,741,748,755,762,769,775,782,788,794,800,806,812,818,823,829,834,839,845,849,854,859,864,868,873,877,881,885,889,893,897,901,904,908,911,915,918,921,924,927,930,933,936,939,941,944,947,949,951,954,956,958,961};
 
 // Global variables
 RTC_DS1307 RTC;
 String dateStamp = "";
 File logFile;
 
-/*
- * Generate a string containing the time and date
- */
+
+
+/***************************************************
+ *  Name:        gen_date_stamp()
+ *
+ *  Returns:     String with time & date
+ *
+ *  Parameters:  DateTime structure
+ *
+ *  Description: Generate a string containing the time and date
+ *
+ ***************************************************/
 String gen_date_stamp(DateTime now)
 {
-    String s = "[";
+    String s = "";
 
     s += now.year();
     s += "-";
     s += now.month();
     s += "-";
     s += now.day();
-    s += "/";
+    s += ", ";
     s += now.hour();
     s += ":";
     s += now.minute();
     s += ":";
     s += now.second();
 
-    s += "],";
+    s += ", ";
 
     return s;
 }
 
-/*
- * Read out the analog value of the temperature sensor
- * and convert it using the adc lookuptable.
- */
+/***************************************************
+ *  Name:        read_temperaure()
+ *
+ *  Returns:     String with the temperature value
+ *
+ *  Parameters:  Nothing
+ *
+ *  Description: Read the analog value of the temperature 
+ *               sensor and convert it using the adc lookuptable.
+ *
+ ***************************************************/
 String read_temperature(void)
 {
-    int temp = 0, a0 = 0, i = 0, j = 0;
+    int temp = 0, atemp = 0, i = 0;
     
-    a0 = analogRead(TEMPERATURE);
+    atemp = analogRead(TEMPERATURE);
     
-    // TODO: Boundary check for the lookuptable
-    for(i = 0; adc_values[i] <= a0; i++){
+    // Boundary check for the lookuptable
+    if(atemp < 192 || atemp > 961){
+        Serial.println("[ERROR]: Abnormal temperature readings.");
+        return "TempError";
+    } else {
+        // Find the corresponding temperature to the adc value
+        for(i = 0; atemp >= adc_values[i]; i++){
+        }
     }
     
-    temp = i;
-        
+    temp = i - 10; // Add 10 since the lookuptable starts with -10°C
+
     return String(temp);
 }
 
-/*
- * Read out the analog value of the moisture sensor
- * TODO: Test the sensor to find the boundarys
- */
+/***************************************************
+ *  Name:        read_tmoisture()
+ *
+ *  Returns:     String with the moisture value
+ *
+ *  Parameters:  Nothing
+ *
+ *  Description: Read the analog value of the moisture sensor
+ *   
+ *  TODO: Test the sensor to find the boundarys.
+ *
+ ***************************************************/
 String read_moisture(void)
 {
-    String moist = ",";
+    String moist = ", ";
     moist += analogRead(MOISTURE);
     return moist;
 }
 
-/*
- * Initialize the device
- */
+/***************************************************
+ *  Name:        setup()
+ *
+ *  Returns:     Nothing
+ *
+ *  Parameters:  Nothing
+ *
+ *  Description: Initialize the device on start
+ *
+ ***************************************************/
 void setup(void) 
 {
-    // Init software
-    Serial.begin(9600);
-    Wire.begin();
-    RTC.begin();
+    Serial.begin(9600); // init serial interface
+    Wire.begin();       // init i2c bus 
+    RTC.begin();        // init real time clock
 
-    pinMode(SS, OUTPUT);    // Make sure the Chipselect is configured as output
+    pinMode(CHIPSELECT, OUTPUT);    // Make sure the Chipselect is configured as output
 
     // Uncoment this to automatically set the compile time! Make sure to comment it out again!
     //RTC.adjust(DateTime(__DATE__, __TIME__)); 
-    
-    // Open the logfile on the SDcard
-    logFile = SD.open("logfile.txt", FILE_WRITE);
    
     // Check if SD card is present and readable
     if(!SD.begin(CHIPSELECT)){
@@ -116,6 +148,9 @@ void setup(void)
         Serial.println("[ERROR]: RTC is NOT running!");
     }
 
+    // Open the logfile on the SDcard
+    logFile = SD.open("logfile.txt", FILE_WRITE);
+    
     // Check if logfile is readable
     if(!logFile){
         Serial.println("[ERROR]: Logfile corrupted!");
@@ -124,19 +159,27 @@ void setup(void)
      
 }
 
-/*
- * Main loop
- */
-void loop () 
+/***************************************************
+ *  Name:        loop()
+ *
+ *  Returns:     Nothing
+ *
+ *  Parameters:  Nothing
+ *
+ *  Description: Main loop
+ *
+ ***************************************************/
+void loop(void) 
 {
     DateTime now = RTC.now();           // Read Time
+    
     dateStamp = gen_date_stamp(now);    // Generate date stamp
     dateStamp += read_temperature();
     dateStamp += read_moisture();
 
-    //Serial.println(dateStamp);          // Debug on serial port
-    logFile.println(dateStamp);           // Write data to the logfile
-    logFile.flush();                      // Save changes on the sdcard
+    //Serial.println(dateStamp);        // Debug on serial port
+    logFile.println(dateStamp);         // Write data to the logfile
+    logFile.flush();                    // Save changes on the sdcard
 
-    delay(1000);
+    delay(5000);
 }
