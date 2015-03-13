@@ -15,25 +15,36 @@
 #include<Wire.h>
 #include<SPI.h>
 #include<SD.h>
-#include"RTClib.h"
-#include <avr/pgmspace.h>
-#include <avr/sleep.h>
-#include <avr/wdt.h>
+#include<RTClib.h>
+#include<avr/pgmspace.h>
+#include<avr/sleep.h>
+#include<avr/wdt.h>
 
-// Makros
-#ifndef cbi
-#define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
-#endif
-
-#ifndef sbi
-#define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
-#endif
- 
 // Defines
 #define TEMPERATURE     A0
 #define MOISTURE        A1
 #define CHIPSELECT      10
-#define SLEEPTIME       9 
+#define SLEEPTIME       9
+#define CSV_SEP         ","
+#define CSV_NL          ";"
+#define LINUX
+
+// Makros
+#ifndef cbi
+    #define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
+#endif
+
+#ifndef sbi
+    #define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
+#endif
+
+#ifdef WINDOWS
+    #define NEWLINE "\r\n"
+#endif
+
+#ifdef LINUX
+    #define NEWLINE "\n"
+#endif
 
 // Lookuptable, where index [i] = °C, adc values from -10°C to 100°C
 //TODO: Make sure this stuff goes to PROGMEM
@@ -101,9 +112,6 @@ void setup_watchdog(int timeout)
     WDTCSR |= _BV(WDIE);
 }
 
-// set system into the sleep state 
-// system wakes up when wtchdog is timed out
-
 /***************************************************
  *  Name:        system_sleep()
  *
@@ -128,32 +136,42 @@ void system_sleep(void)
 
 
 /***************************************************
- *  Name:        gen_date_stamp()
+ *  Name:        gen_date_stamped_dataline()
  *
- *  Returns:     String with time & date
+ *  Returns:     String with time & date & temp & moist
  *
  *  Parameters:  DateTime structure
  *
  *  Description: Generate a string containing the time and date
+ *               aswell as the temperature and moisture set up
+ *               in a csv line.
  *
  ***************************************************/
-String gen_date_stamp(DateTime now)
+String gen_date_stamped_dataline(DateTime now)
 {
     String s = "";
 
+    // Append time to a string
     s += now.year();
     s += "-";
     s += now.month();
     s += "-";
     s += now.day();
-    s += ", ";
+    s += CSV_SEP;        
     s += now.hour();
     s += ":";
     s += now.minute();
     s += ":";
     s += now.second();
+    s += CSV_SEP;
 
-    s += ", ";
+    // Now append the measured data
+    s += read_temperature();
+    s += CSV_SEP;
+    s += read_moisture();
+
+    // New csv line
+    s += CSV_NL;
 
     return s;
 }
@@ -204,7 +222,7 @@ String read_temperature(void)
  ***************************************************/
 String read_moisture(void)
 {
-    String moist = ", ";
+    String moist = "";
     moist += analogRead(MOISTURE);
     return moist;
 }
@@ -276,11 +294,10 @@ void loop(void)
         flag_wdt = false;                   // Reset the global flag
         DateTime now = RTC.now();           // Read Time
         
-        dateStamp = gen_date_stamp(now);    // Generate date stamp
-        dateStamp += read_temperature();
-        dateStamp += read_moisture();
+        dateStamp = gen_date_stamped_dataline(now);    // Generate date stamp
 
-        Serial.println(dateStamp);          // Debug on serial port
+        //Serial.println(dateStamp);          // Debug on serial port
+        
         logFile.println(dateStamp);         // Write data to the logfile
         logFile.flush();                    // Save changes on the sdcard
     }else{
