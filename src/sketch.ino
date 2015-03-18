@@ -10,6 +10,8 @@
  * Developer: aaron@duckpond.ch
  *
  * TODO: Convert the sleepmode and wdt stuff from plain c to arduino language.
+ * TODO: Optimize powersaving (partly done)
+ * TODO: Adjust the lookuptable to Ub=4.3V
  */
 
 #include<Wire.h>
@@ -21,13 +23,15 @@
 #include<avr/wdt.h>
 
 // Defines
+#define SENSOR_POWERPIN 7
 #define TEMPERATURE     A0
 #define MOISTURE        A1
 #define CHIPSELECT      10
 #define SLEEPTIME       9
 #define CSV_SEP         ","
 #define CSV_NL          ";"
-#define LINUX
+#define LINUX           
+//#define DEBUG           
 
 // Makros
 #ifndef cbi
@@ -52,9 +56,9 @@ const int adc_values[] = {192,199,207,215,224,232,241,250,258,268,277,286,296,30
 
 // Global variables
 RTC_DS1307 RTC;
-String dateStamp = "";
+String dateStamp;
 File logFile;
-volatile boolean flag_wdt = true;
+volatile int flag_wdt;
 
 /***************************************************
  *  Name:        ISR(WDT_vect)
@@ -68,7 +72,7 @@ volatile boolean flag_wdt = true;
  *
  ***************************************************/
 ISR(WDT_vect) {
-  flag_wdt = true;  // set global flag
+  flag_wdt++;    // increment global flag
 }
 
 /***************************************************
@@ -117,21 +121,27 @@ void setup_watchdog(int timeout)
  *
  *  Returns:     nothing
  *
- *  Parameters:  nothing
+ *  Parameters:  int sleeptime
  *
  *  Description: Set the system to sleep state until the 
  *               watchdog timer times out.
  *
  ***************************************************/
-void system_sleep(void) 
+void system_sleep(int sleeptime) 
 {
-  cbi(ADCSRA,ADEN);                    // Turn adc OFF
-  set_sleep_mode(SLEEP_MODE_PWR_DOWN); // Set the sleep mode
-  sleep_enable();                      // enable sleep mode
-  sleep_mode();                        // System sleeps here
+    cbi(ADCSRA,ADEN);                    // Turn adc OFF
+    digitalWrite(SENSOR_POWERPIN, LOW);  // Disable sensor power
 
-  sleep_disable();                     // System continues execution only when the wdt timed out 
-  sbi(ADCSRA,ADEN);                    // switch adc back ON
+    set_sleep_mode(SLEEP_MODE_PWR_DOWN); // Set the sleep mode
+    sleep_enable();                      // enable sleep mode
+    sleep_mode();                        // System sleeps here
+
+    if(flag_wdt = sleeptime){            // If the sleeptime is reached
+        sleep_disable();                 // System continues execution
+        sbi(ADCSRA,ADEN);                // switch adc back ON
+    }else{
+        sleep_mode();                    // Go sleep again
+    }
 }
 
 
@@ -150,6 +160,8 @@ void system_sleep(void)
 String gen_date_stamped_dataline(DateTime now)
 {
     String s = "";
+
+    digitalWrite(SENSOR_POWERPIN, HIGH); // Enable senor power
 
     // Append time to a string
     s += now.year();
@@ -195,7 +207,9 @@ String read_temperature(void)
     
     // Boundary check for the lookuptable
     if(atemp < 192 || atemp > 961){
+#ifdef DEBUG
         Serial.println("[ERROR]: Abnormal temperature readings.");
+#endif
         return "TempError";
     } else {
         // Find the corresponding temperature to the adc value
@@ -239,24 +253,31 @@ String read_moisture(void)
  ***************************************************/
 void setup(void) 
 {
+#ifdef DEBUG
     Serial.begin(9600); // init serial interface
+#endif
     Wire.begin();       // init i2c bus 
     RTC.begin();        // init real time clock
 
-    pinMode(CHIPSELECT, OUTPUT);    // Make sure the Chipselect is configured as output
+    pinMode(CHIPSELECT, OUTPUT);        // Make sure the Chipselect is configured as output
+    pinMode(SENSOR_POWERPIN, OUTPUT);   // Enable the sensor powersource
 
     // Uncoment this to automatically set the compile time! Make sure to comment it out again!
     //RTC.adjust(DateTime(__DATE__, __TIME__)); 
    
     // Check if SD card is present and readable
     if(!SD.begin(CHIPSELECT)){
+#ifdef DEBUG
         Serial.println("[ERROR]: SDcard failed or not present!");
+#endif
         while(1);   // Error case, do nothing
     }
 
     // Check if rtc is running
     if (!RTC.isrunning()){
+#ifdef DEBUG
         Serial.println("[ERROR]: RTC is NOT running!");
+#endif
     }
 
     // Open the logfile on the SDcard
@@ -264,7 +285,9 @@ void setup(void)
     
     // Check if logfile is readable
     if(!logFile){
+#ifdef DEBUG
         Serial.println("[ERROR]: Logfile corrupted!");
+#endif
         while(1);   // Error case, do nothing
     }
 
@@ -289,18 +312,17 @@ void setup(void)
  ***************************************************/
 void loop(void) 
 {
-    // Only do something when the wdt timeout occurs
-    if(flag_wdt){
-        flag_wdt = false;                   // Reset the global flag
-        DateTime now = RTC.now();           // Read Time
-        
-        dateStamp = gen_date_stamped_dataline(now);    // Generate date stamp
+#ifdef DEBUG
+    Serial.println("----- Good Morning!");
+#endif
+    DateTime now = RTC.now();           // Read Time
+    dateStamp = gen_date_stamped_dataline(now);    // Generate date stamp
 
-        //Serial.println(dateStamp);          // Debug on serial port
-        
-        logFile.println(dateStamp);         // Write data to the logfile
-        logFile.flush();                    // Save changes on the sdcard
-    }else{
-        system_sleep();
-    }
+#ifdef DEBUG
+    Serial.println(dateStamp);          // Debug on serial port
+#endif
+    logFile.println(dateStamp);         // Write data to the logfile
+    logFile.flush();                    // Save changes on the sdcard
+
+    system_sleep(8*450);                // Good night for one hour
 }
