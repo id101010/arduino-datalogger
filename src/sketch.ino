@@ -300,6 +300,34 @@ void setup(void)
      
 }
 
+// TODO implement a function to calculate the wdt_flag value thresholds
+uint8_t calc_sleeptime(uint16_t seconds)
+{
+    switch(SLEEPTIME){
+        case 9:
+            return seconds/8
+            break;
+        case 8:
+            break;
+        case 9:
+            break;
+        case 8:
+            break;
+        case 9:
+            break;
+        case 8:
+            break;
+        case 9:
+            break;
+        case 8:
+            break;
+        case 9:
+            break;
+        case 8:
+            break;
+    }
+}
+
 /***************************************************
  *  Name:        loop()
  *
@@ -323,6 +351,5 @@ void loop(void)
 #endif
     logFile.println(dateStamp);         // Write data to the logfile
     logFile.flush();                    // Save changes on the sdcard
-
     system_sleep(8*450);                // Good night for one hour
 }
