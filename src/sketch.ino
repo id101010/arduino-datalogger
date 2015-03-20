@@ -27,7 +27,7 @@
 #define TEMPERATURE     A0
 #define MOISTURE        A1
 #define CHIPSELECT      10
-#define SLEEPTIME       9
+#define WDT_FREQ        6
 #define CSV_SEP         ","
 #define CSV_NL          ";"
 #define LINUX           
@@ -52,13 +52,13 @@
 
 // Lookuptable, where index [i] = °C, adc values from -10°C to 100°C
 //TODO: Make sure this stuff goes to PROGMEM
-const int adc_values[] = {192,199,207,215,224,232,241,250,258,268,277,286,296,305,315,325,335,344,355,365,375,385,395,406,416,426,437,447,458,468,478,489,499,509,519,529,539,549,559,569,579,588,598,607,617,626,635,644,653,661,670,678,686,695,703,711,718,726,733,741,748,755,762,769,775,782,788,794,800,806,812,818,823,829,834,839,845,849,854,859,864,868,873,877,881,885,889,893,897,901,904,908,911,915,918,921,924,927,930,933,936,939,941,944,947,949,951,954,956,958,961};
-
+const int adc_values[] = {168,175,182,189,196,204,211,219,227,235,243,251,259,268,276,285,294,302,311,320,329,338,347,356,365,374,383,392,402,411,420,429,438,447,456,465,473,482,491,499,508,516,525,533,541,549,557,565,573,580,588,595,602,610,617,624,630,637,644,650,656,662,669,674,680,686,692,697,702,708,713,718,723,727,732,737,741,745,750,754,758,762,766,770,773,777,780,784,787,790,794,797,800,803,805,808,811,814,816,819,821,824,826,828,831,833,835,837,839,841,843};
+ 
 // Global variables
 RTC_DS1307 RTC;
 String dateStamp;
 File logFile;
-volatile int flag_wdt;
+volatile uint16_t flag_wdt;
 
 /***************************************************
  *  Name:        ISR(WDT_vect)
@@ -292,38 +292,50 @@ void setup(void)
     }
 
     // Set up the sleep mode
-    cbi(SMCR,SE);               // sleep enable, power down mode
-    cbi(SMCR,SM0);              // power down mode
-    sbi(SMCR,SM1);              // power down mode
-    cbi(SMCR,SM2);              // power down mode
-    setup_watchdog(SLEEPTIME);
+    cbi(SMCR,SE);                   // sleep enable, power down mode
+    cbi(SMCR,SM0);                  // power down mode
+    sbi(SMCR,SM1);                  // power down mode
+    cbi(SMCR,SM2);                  // power down mode
+    setup_watchdog(WDT_FREQ);       // WDT counts with this frequency
      
 }
 
 // TODO implement a function to calculate the wdt_flag value thresholds
-uint8_t calc_sleeptime(uint16_t seconds)
+uint8_t calc_sleeptime(uint16_t seconds, uint8_t wdt_frequency)
 {
-    switch(SLEEPTIME){
+    switch(wdt_frequency){
         case 9:
-            return seconds/8
+            return (seconds / 8);
             break;
         case 8:
+            return (seconds / 4);
             break;
-        case 9:
+        case 7:
+            return (seconds / 2);
             break;
-        case 8:
+        case 6:
+            return (seconds / 1);
             break;
-        case 9:
+        case 5:
+            return (2 * seconds);
             break;
-        case 8:
+        case 4:
+            return (4 * seconds);
             break;
-        case 9:
+        case 3:
+            return (8 * seconds);
             break;
-        case 8:
+        case 2:
+            return (16 * seconds);
             break;
-        case 9:
+        case 1:
+            return (32 * seconds);
             break;
-        case 8:
+        case 0:
+            return (64 * seconds);
+            break;
+        default:
+            return seconds;
             break;
     }
 }
@@ -341,15 +353,15 @@ uint8_t calc_sleeptime(uint16_t seconds)
 void loop(void) 
 {
 #ifdef DEBUG
-    Serial.println("----- Good Morning!");
+    Serial.println("System wakeup, good Morning!");
 #endif
-    DateTime now = RTC.now();           // Read Time
-    dateStamp = gen_date_stamped_dataline(now);    // Generate date stamp
+    DateTime now = RTC.now();                       // Read Time
+    dateStamp = gen_date_stamped_dataline(now);     // Generate date stamp
 
 #ifdef DEBUG
-    Serial.println(dateStamp);          // Debug on serial port
+    Serial.println(dateStamp);                      // Debug on serial port
 #endif
-    logFile.println(dateStamp);         // Write data to the logfile
-    logFile.flush();                    // Save changes on the sdcard
-    system_sleep(8*450);                // Good night for one hour
+    logFile.println(dateStamp);                     // Write data to the logfile
+    logFile.flush();                                // Save changes on the sdcard
+    system_sleep(calc_sleeptime(10, WDT_FREQ));      // Good night
 }
