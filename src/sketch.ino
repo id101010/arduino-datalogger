@@ -56,9 +56,13 @@ const int adc_values[] = {168,175,182,189,196,204,211,219,227,235,243,251,259,26
  
 // Global variables
 RTC_DS1307 RTC;
+
 String dateStamp;
+String s = "";
+
 File logFile;
 volatile uint16_t flag_wdt;
+
 
 /***************************************************
  *  Name:        ISR(WDT_vect)
@@ -72,7 +76,7 @@ volatile uint16_t flag_wdt;
  *
  ***************************************************/
 ISR(WDT_vect) {
-  flag_wdt++;    // increment global flag
+    flag_wdt++;    // increment global flag
 }
 
 /***************************************************
@@ -121,27 +125,24 @@ void setup_watchdog(int timeout)
  *
  *  Returns:     nothing
  *
- *  Parameters:  int sleeptime
+ *  Parameters:  nothing
  *
  *  Description: Set the system to sleep state until the 
  *               watchdog timer times out.
  *
  ***************************************************/
-void system_sleep(int sleeptime) 
+void system_sleep() 
 {
     cbi(ADCSRA,ADEN);                    // Turn adc OFF
     digitalWrite(SENSOR_POWERPIN, LOW);  // Disable sensor power
-
+    
     set_sleep_mode(SLEEP_MODE_PWR_DOWN); // Set the sleep mode
     sleep_enable();                      // enable sleep mode
     sleep_mode();                        // System sleeps here
 
-    if(flag_wdt = sleeptime){            // If the sleeptime is reached
-        sleep_disable();                 // System continues execution
-        sbi(ADCSRA,ADEN);                // switch adc back ON
-    }else{
-        sleep_mode();                    // Go sleep again
-    }
+    sleep_disable();                     // System continues execution
+    sbi(ADCSRA,ADEN);                    // switch adc back ON
+
 }
 
 
@@ -159,8 +160,7 @@ void system_sleep(int sleeptime)
  ***************************************************/
 String gen_date_stamped_dataline(DateTime now)
 {
-    String s = "";
-
+    s = "";
     digitalWrite(SENSOR_POWERPIN, HIGH); // Enable senor power
 
     // Append time to a string
@@ -210,7 +210,7 @@ String read_temperature(void)
 #ifdef DEBUG
         Serial.println("[ERROR]: Abnormal temperature readings.");
 #endif
-        return "TempError";
+        return String(atemp);
     } else {
         // Find the corresponding temperature to the adc value
         for(i = 0; atemp >= adc_values[i]; i++){
@@ -300,7 +300,16 @@ void setup(void)
      
 }
 
-// TODO implement a function to calculate the wdt_flag value thresholds
+/***************************************************
+ *  Name:        calc_sleeptim
+ *
+ *  Returns:     timeout
+ *
+ *  Parameters:  seconds, wdt_frequency
+ *
+ *  Description: Calculates sleeptime for the wdt_freq
+ *
+ ***************************************************/
 uint8_t calc_sleeptime(uint16_t seconds, uint8_t wdt_frequency)
 {
     switch(wdt_frequency){
@@ -352,16 +361,16 @@ uint8_t calc_sleeptime(uint16_t seconds, uint8_t wdt_frequency)
  ***************************************************/
 void loop(void) 
 {
+    if(flag_wdt >= calc_sleeptime(2, WDT_FREQ)){    // If the sleeptime is reached
+        flag_wdt = 0;                               // Set counter to 0
+        DateTime now = RTC.now();                   // Read Time
+        dateStamp = gen_date_stamped_dataline(now); // Generate date stamp
 #ifdef DEBUG
-    Serial.println("System wakeup, good Morning!");
+        Serial.println(dateStamp);                  // Debug on serial port
 #endif
-    DateTime now = RTC.now();                       // Read Time
-    dateStamp = gen_date_stamped_dataline(now);     // Generate date stamp
-
-#ifdef DEBUG
-    Serial.println(dateStamp);                      // Debug on serial port
-#endif
-    logFile.println(dateStamp);                     // Write data to the logfile
-    logFile.flush();                                // Save changes on the sdcard
-    system_sleep(calc_sleeptime(10, WDT_FREQ));      // Good night
+        logFile.println(dateStamp);                 // Write data to the logfile
+        logFile.flush();                            // Save changes on the sdcard
+    }else{
+        system_sleep();                             // Good night
+    }
 }
