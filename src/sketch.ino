@@ -52,7 +52,7 @@
 
 // Lookuptable, where index [i] = °C, adc values from -10°C to 100°C
 //TODO: Make sure this stuff goes to PROGMEM
-const int adc_values[] = {168,175,182,189,196,204,211,219,227,235,243,251,259,268,276,285,294,302,311,320,329,338,347,356,365,374,383,392,402,411,420,429,438,447,456,465,473,482,491,499,508,516,525,533,541,549,557,565,573,580,588,595,602,610,617,624,630,637,644,650,656,662,669,674,680,686,692,697,702,708,713,718,723,727,732,737,741,745,750,754,758,762,766,770,773,777,780,784,787,790,794,797,800,803,805,808,811,814,816,819,821,824,826,828,831,833,835,837,839,841,843};
+const int adc_values[] = { 183,190,198,206,214,222,230,238,247,256,264,273,282,291,301,310,319,329,339,348,358,368,378,388,397,407,417,427,437,447,457,467,476,486,496,506,515,525,534,543,553,562,571,580,589,598,606,615,623,632,640,648,656,663,671,679,686,693,700,707,714,721,728,734,740,747,753,759,764,770,776,781,786,792,797,802,807,811,816,820,825,829,833,838,842,845,849,853,857,860,864,867,870,874,877,880,883,886,888,891,894,897,899,902,904,906,909,911,913,915,917 };
  
 // Global variables
 RTC_DS1307 RTC;
@@ -206,7 +206,7 @@ String read_temperature(void)
     atemp = analogRead(TEMPERATURE);
     
     // Boundary check for the lookuptable
-    if(atemp < 192 || atemp > 961){
+    if(atemp < 183 || atemp > 917){
 #ifdef DEBUG
         Serial.println("[ERROR]: Abnormal temperature readings.");
 #endif
@@ -310,7 +310,7 @@ void setup(void)
  *  Description: Calculates sleeptime for the wdt_freq
  *
  ***************************************************/
-uint8_t calc_sleeptime(uint16_t seconds, uint8_t wdt_frequency)
+uint16_t calc_sleeptime(uint16_t seconds, uint8_t wdt_frequency)
 {
     switch(wdt_frequency){
         case 9:
@@ -361,7 +361,7 @@ uint8_t calc_sleeptime(uint16_t seconds, uint8_t wdt_frequency)
  ***************************************************/
 void loop(void) 
 {
-    if(flag_wdt >= calc_sleeptime(2, WDT_FREQ)){    // If the sleeptime is reached
+    if(flag_wdt >= calc_sleeptime(1800, WDT_FREQ)){    // If the sleeptime is reached
         flag_wdt = 0;                               // Set counter to 0
         DateTime now = RTC.now();                   // Read Time
         dateStamp = gen_date_stamped_dataline(now); // Generate date stamp
@@ -372,5 +372,6 @@ void loop(void)
         logFile.flush();                            // Save changes on the sdcard
     }else{
         system_sleep();                             // Good night
+        //delay(1000);
     }
 }
