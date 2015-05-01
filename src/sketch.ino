@@ -18,9 +18,11 @@
 #include<SPI.h>
 #include<SD.h>
 #include<RTClib.h>
+#include<LowPower.h>
 #include<avr/pgmspace.h>
 #include<avr/sleep.h>
 #include<avr/wdt.h>
+#include<avr/power.h>
 
 // Defines
 #define SENSOR_POWERPIN 7
@@ -34,14 +36,6 @@
 //#define DEBUG           
 
 // Makros
-#ifndef cbi
-    #define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
-#endif
-
-#ifndef sbi
-    #define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
-#endif
-
 #ifdef WINDOWS
     #define NEWLINE "\r\n"
 #endif
@@ -61,90 +55,6 @@ String dateStamp;
 String s = "";
 
 File logFile;
-volatile uint16_t flag_wdt;
-
-
-/***************************************************
- *  Name:        ISR(WDT_vect)
- *
- *  Returns:     Nothing
- *
- *  Parameters:  Nothing
- *
- *  Description: Interrupt service routine for the 
- *               Watchdog timer.
- *
- ***************************************************/
-ISR(WDT_vect) {
-    flag_wdt++;    // increment global flag
-}
-
-/***************************************************
- *  Name:        setup_watchdog()
- *
- *  Returns:     Nothing
- *
- *  Parameters:  int timeout
- *
- *  Description: Sets up the watchtog timer to time out 
- *               in one of the following intervals:
- *               0=16ms, 1=32ms,2=64ms,3=128ms,4=250ms,
- *               5=500ms, 6=1s, 7=2s, 8=4s, 9=8s
- ***************************************************/
-void setup_watchdog(int timeout) 
-{
-    byte bb;
-    int ww;
-
-    // Set max value
-    if (timeout > 9 ){
-        timeout = 9;
-    }
-
-    bb = timeout & 7;
-
-    if (timeout > 7){
-         bb |= (1<<5);
-    }
-    
-    bb |= (1<<WDCE);
-    ww = bb;
-
-    MCUSR &= ~(1<<WDRF);
-
-    // start timed sequence
-    WDTCSR |= (1<<WDCE) | (1<<WDE);
-
-    // set new watchdog timeout value
-    WDTCSR = bb;
-    WDTCSR |= _BV(WDIE);
-}
-
-/***************************************************
- *  Name:        system_sleep()
- *
- *  Returns:     nothing
- *
- *  Parameters:  nothing
- *
- *  Description: Set the system to sleep state until the 
- *               watchdog timer times out.
- *
- ***************************************************/
-void system_sleep() 
-{
-    cbi(ADCSRA,ADEN);                    // Turn adc OFF
-    digitalWrite(SENSOR_POWERPIN, LOW);  // Disable sensor power
-    
-    set_sleep_mode(SLEEP_MODE_PWR_DOWN); // Set the sleep mode
-    sleep_enable();                      // enable sleep mode
-    sleep_mode();                        // System sleeps here
-
-    sleep_disable();                     // System continues execution
-    sbi(ADCSRA,ADEN);                    // switch adc back ON
-
-}
-
 
 /***************************************************
  *  Name:        gen_date_stamped_dataline()
@@ -290,64 +200,30 @@ void setup(void)
 #endif
         while(1);   // Error case, do nothing
     }
-
-    // Set up the sleep mode
-    cbi(SMCR,SE);                   // sleep enable, power down mode
-    cbi(SMCR,SM0);                  // power down mode
-    sbi(SMCR,SM1);                  // power down mode
-    cbi(SMCR,SM2);                  // power down mode
-    setup_watchdog(WDT_FREQ);       // WDT counts with this frequency
-     
+    
+    clock_prescale_set(clock_div_256); // reduce clock (power saving)
 }
 
 /***************************************************
- *  Name:        calc_sleeptim
+ *  Name:        sleep
  *
- *  Returns:     timeout
+ *  Returns:     nothing
  *
- *  Parameters:  seconds, wdt_frequency
+ *  Parameters:  uint16_t minutes
  *
- *  Description: Calculates sleeptime for the wdt_freq
+ *  Description: Let the system sleep in pwr down mode
+ *               for n minutes.
  *
  ***************************************************/
-uint16_t calc_sleeptime(uint16_t seconds, uint8_t wdt_frequency)
+void sleep(uint16_t minutes)
 {
-    switch(wdt_frequency){
-        case 9:
-            return (seconds / 8);
-            break;
-        case 8:
-            return (seconds / 4);
-            break;
-        case 7:
-            return (seconds / 2);
-            break;
-        case 6:
-            return (seconds / 1);
-            break;
-        case 5:
-            return (2 * seconds);
-            break;
-        case 4:
-            return (4 * seconds);
-            break;
-        case 3:
-            return (8 * seconds);
-            break;
-        case 2:
-            return (16 * seconds);
-            break;
-        case 1:
-            return (32 * seconds);
-            break;
-        case 0:
-            return (64 * seconds);
-            break;
-        default:
-            return seconds;
-            break;
+    uint16_t n = (8*minutes);       // 1min =~ 64s
+
+    for(int i = 0; i < n; i++) { 
+        LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF); 
     }
 }
+
 
 /***************************************************
  *  Name:        loop()
@@ -361,17 +237,13 @@ uint16_t calc_sleeptime(uint16_t seconds, uint8_t wdt_frequency)
  ***************************************************/
 void loop(void) 
 {
-    if(flag_wdt >= calc_sleeptime(1800, WDT_FREQ)){    // If the sleeptime is reached
-        flag_wdt = 0;                               // Set counter to 0
-        DateTime now = RTC.now();                   // Read Time
-        dateStamp = gen_date_stamped_dataline(now); // Generate date stamp
+    DateTime now = RTC.now();                   // Read Time
+    dateStamp = gen_date_stamped_dataline(now); // Generate date stamp
 #ifdef DEBUG
-        Serial.println(dateStamp);                  // Debug on serial port
+    Serial.println(dateStamp);                  // Debug on serial port
 #endif
-        logFile.println(dateStamp);                 // Write data to the logfile
-        logFile.flush();                            // Save changes on the sdcard
-    }else{
-        system_sleep();                             // Good night
-        //delay(1000);
-    }
+    logFile.println(dateStamp);                 // Write data to the logfile
+    logFile.flush();                            // Save changes on the sdcard
+    
+    sleep(30);                                  // Power down for 30min
 }
