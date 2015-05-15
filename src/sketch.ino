@@ -4,8 +4,24 @@
  * Date and time functions are working using a DS1307 RTC connected via I2C.
  * The data are logged on a FAT16/32 formatted SD card in a readable format.
  *
- * Moisture sensor        -      ADC0
- * Temperature sensor     -      ADC1
+ * Sensor Pinmap
+ * -------------
+ *
+ * Moisture sensor 1        -       ADC0
+ * Moisture sensor 2        -       ADC1
+ * Moisture sensor 3        -       ADC2
+ * Temperature sensor 1     -       ADC3
+ *
+ * Sensor Powerpins (Output!)
+ * ----------------
+ * 
+ * The temperaturesensors share a common powerpin while the moisture sensors need
+ * to be powered seperatly.
+ * 
+ * Moisture sensor 1        -       PD7
+ * Moisture sensor 2        -       PD6
+ * Moisture sensor 3        -       PD5
+ * Temperature sensor       -       PD4
  *
  * Developer: aaron@duckpond.ch
  *
@@ -13,8 +29,6 @@
  * TODO: Optimize powersaving (partly done)
  * TODO: Adjust the lookuptable to Ub=4.3V
  */
-
-#include<Wire.h>
 #include<SPI.h>
 #include<SD.h>
 #include<RTClib.h>
@@ -24,18 +38,30 @@
 #include<avr/wdt.h>
 #include<avr/power.h>
 
-// Defines
-#define SENSOR_POWERPIN 7
-#define TEMPERATURE     A0
-#define MOISTURE        A1
+/* Defines */
+#define P_MOIST1        7
+#define P_MOIST2        6
+#define P_MOIST3        5
+#define P_TEMP          4
+
+#define M1              A0
+#define M2              A1
+#define M3              A2
+#define T1              A3
+//#define T2              A4
+//#define T3              A5
+
 #define CHIPSELECT      10
 #define WDT_FREQ        6
-#define CSV_SEP         ","
-#define CSV_NL          ";"
+#define CSV_SEP         ", "
+#define CSV_NL          "; "
 #define LINUX           
-//#define DEBUG           
+#define DEBUG           
 
-// Makros
+#define TEMP_UPPER_BOUNDARY 917
+#define TEMP_LOWER_BOUNDARY 183
+
+/* Makros */
 #ifdef WINDOWS
     #define NEWLINE "\r\n"
 #endif
@@ -44,11 +70,12 @@
     #define NEWLINE "\n"
 #endif
 
+/* Global variables */
+
 // Lookuptable, where index [i] = °C, adc values from -10°C to 100°C
 //TODO: Make sure this stuff goes to PROGMEM
 const int adc_values[] = { 183,190,198,206,214,222,230,238,247,256,264,273,282,291,301,310,319,329,339,348,358,368,378,388,397,407,417,427,437,447,457,467,476,486,496,506,515,525,534,543,553,562,571,580,589,598,606,615,623,632,640,648,656,663,671,679,686,693,700,707,714,721,728,734,740,747,753,759,764,770,776,781,786,792,797,802,807,811,816,820,825,829,833,838,842,845,849,853,857,860,864,867,870,874,877,880,883,886,888,891,894,897,899,902,904,906,909,911,913,915,917 };
  
-// Global variables
 RTC_DS1307 RTC;
 
 String dateStamp;
@@ -71,7 +98,6 @@ File logFile;
 String gen_date_stamped_dataline(DateTime now)
 {
     s = "";
-    digitalWrite(SENSOR_POWERPIN, HIGH); // Enable senor power
 
     // Append time to a string
     s += now.year();
@@ -111,29 +137,53 @@ String gen_date_stamped_dataline(DateTime now)
  ***************************************************/
 String read_temperature(void)
 {
-    int temp = 0, atemp = 0, i = 0;
+    String str = "";
+    int temp[3];
     
-    atemp = analogRead(TEMPERATURE);
-    
-    // Boundary check for the lookuptable
-    if(atemp < 183 || atemp > 917){
-#ifdef DEBUG
-        Serial.println("[ERROR]: Abnormal temperature readings.");
-#endif
-        return String(atemp);
-    } else {
-        // Find the corresponding temperature to the adc value
-        for(i = 0; atemp >= adc_values[i]; i++){
-        }
-    }
-    
-    temp = i - 10; // Add 10 since the lookuptable starts with -10°C
+    digitalWrite(P_TEMP, HIGH);         // Enable senor power
 
-    return String(temp);
+    temp[0] = analogRead(T1);           // Read temperature sensors
+    //temp[1] = analogRead(T2);
+    //temp[2] = analogRead(T3);
+    
+    digitalWrite(P_TEMP, LOW);          // Disable senor power
+    
+    str += String(convert_advalue_to_temperature(temp[0]));
+    str += ", ";
+    //str += String(convert_advalue_to_temperature(temp[1]));
+    //str += ", ";
+    //str += String(convert_advalue_to_temperature(temp[2]));
+
+    return str;
 }
 
 /***************************************************
- *  Name:        read_tmoisture()
+ *  Name:        convert_advlaue_to_temperature()
+ *
+ *  Returns:     String with the moisture value
+ *
+ *  Parameters:  Nothing
+ *
+ *  Description: Read the analog value of the moisture sensor
+ *
+ ***************************************************/
+String convert_advalue_to_temperature(int value)
+{
+    int i = 0;
+    int out = 0;
+
+    if(value < TEMP_LOWER_BOUNDARY || value > TEMP_UPPER_BOUNDARY){ // Boundary check
+        return ("Error:" + String(value));
+    }else{
+        for(i = 0; value >= adc_values[i]; i++);                  // Find the corresponding temperature
+        out = (i - 10);
+    }
+
+    return String(out);
+}
+
+/***************************************************
+ *  Name:        read_moisture()
  *
  *  Returns:     String with the moisture value
  *
@@ -147,7 +197,22 @@ String read_temperature(void)
 String read_moisture(void)
 {
     String moist = "";
-    moist += analogRead(MOISTURE);
+    int i = 0;
+
+    digitalWrite(P_MOIST1, HIGH);   // Enable senor power
+    digitalWrite(P_MOIST2, HIGH);   
+    digitalWrite(P_MOIST3, HIGH);   
+    
+    moist += analogRead(M1);        // Read the moisture sensors
+    moist += ", ";
+    moist += analogRead(M2);
+    moist += ", ";
+    moist += analogRead(M3);
+    
+    digitalWrite(P_MOIST1, LOW);    // Disable senor power
+    digitalWrite(P_MOIST2, LOW);   
+    digitalWrite(P_MOIST3, LOW);   
+    
     return moist;
 }
 
@@ -166,11 +231,13 @@ void setup(void)
 #ifdef DEBUG
     Serial.begin(9600); // init serial interface
 #endif
-    Wire.begin();       // init i2c bus 
     RTC.begin();        // init real time clock
 
-    pinMode(CHIPSELECT, OUTPUT);        // Make sure the Chipselect is configured as output
-    pinMode(SENSOR_POWERPIN, OUTPUT);   // Enable the sensor powersource
+    pinMode(CHIPSELECT, OUTPUT); // Configure the following pins as output
+    pinMode(P_MOIST1,   OUTPUT);
+    pinMode(P_MOIST2,   OUTPUT);
+    pinMode(P_MOIST3,   OUTPUT);
+    pinMode(P_TEMP,     OUTPUT);
 
     // Uncoment this to automatically set the compile time! Make sure to comment it out again!
     //RTC.adjust(DateTime(__DATE__, __TIME__)); 
@@ -201,7 +268,7 @@ void setup(void)
         while(1);   // Error case, do nothing
     }
     
-    clock_prescale_set(clock_div_256); // reduce clock (power saving)
+    //clock_prescale_set(clock_div_256); // reduce sysclock to the minimum (due to power saving)
 }
 
 /***************************************************
@@ -244,6 +311,6 @@ void loop(void)
 #endif
     logFile.println(dateStamp);                 // Write data to the logfile
     logFile.flush();                            // Save changes on the sdcard
-    
-    sleep(30);                                  // Power down for 30min
+    //sleep(30);                                  // Power down for 30min
+    delay(1000);
 }
