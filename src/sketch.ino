@@ -20,8 +20,7 @@
  * 
  * Moisture sensor 1        -       PD7
  * Moisture sensor 2        -       PD6
- * Moisture sensor 3        -       PD5
- * Temperature sensor       -       PD4
+ * Temperature sensors     -       PD4
  *
  * Developer: aaron@duckpond.ch
  *
@@ -33,6 +32,7 @@
 #include<SD.h>
 #include<RTClib.h>
 #include<LowPower.h>
+#include<Wire.h>
 #include<avr/pgmspace.h>
 #include<avr/sleep.h>
 #include<avr/wdt.h>
@@ -41,15 +41,12 @@
 /* Defines */
 #define P_MOIST1        7
 #define P_MOIST2        6
-#define P_MOIST3        5
 #define P_TEMP          4
 
 #define M1              A0
 #define M2              A1
-#define M3              A2
-#define T1              A3
-//#define T2              A4
-//#define T3              A5
+#define T1              A2
+#define T2              A3
 
 #define CHIPSELECT      10
 #define WDT_FREQ        6
@@ -114,9 +111,9 @@ String gen_date_stamped_dataline(DateTime now)
     s += CSV_SEP;
 
     // Now append the measured data
-    s += read_temperature();
-    s += CSV_SEP;
     s += read_moisture();
+    s += CSV_SEP;
+    s += read_temperature();
 
     // New csv line
     s += CSV_NL;
@@ -138,21 +135,21 @@ String gen_date_stamped_dataline(DateTime now)
 String read_temperature(void)
 {
     String str = "";
-    int temp[3];
+    int temp[2];
     
     digitalWrite(P_TEMP, HIGH);         // Enable senor power
 
     temp[0] = analogRead(T1);           // Read temperature sensors
-    //temp[1] = analogRead(T2);
-    //temp[2] = analogRead(T3);
+    temp[1] = analogRead(T2);
     
     digitalWrite(P_TEMP, LOW);          // Disable senor power
     
-    str += String(convert_advalue_to_temperature(temp[0]));
-    str += ", ";
-    //str += String(convert_advalue_to_temperature(temp[1]));
+    //str += String(convert_advalue_to_temperature(temp[0]));
     //str += ", ";
-    //str += String(convert_advalue_to_temperature(temp[2]));
+    //str += String(convert_advalue_to_temperature(temp[1]));
+    str += String(temp[0]);
+    str += ", ";
+    str += String(temp[1]);
 
     return str;
 }
@@ -201,17 +198,15 @@ String read_moisture(void)
 
     digitalWrite(P_MOIST1, HIGH);   // Enable senor power
     digitalWrite(P_MOIST2, HIGH);   
-    digitalWrite(P_MOIST3, HIGH);   
+
+    delay(200);                     // Wait for the Sensor to boot up
     
     moist += analogRead(M1);        // Read the moisture sensors
     moist += ", ";
     moist += analogRead(M2);
-    moist += ", ";
-    moist += analogRead(M3);
     
     digitalWrite(P_MOIST1, LOW);    // Disable senor power
     digitalWrite(P_MOIST2, LOW);   
-    digitalWrite(P_MOIST3, LOW);   
     
     return moist;
 }
@@ -231,13 +226,13 @@ void setup(void)
 #ifdef DEBUG
     Serial.begin(9600); // init serial interface
 #endif
-    RTC.begin();        // init real time clock
-
     pinMode(CHIPSELECT, OUTPUT); // Configure the following pins as output
     pinMode(P_MOIST1,   OUTPUT);
     pinMode(P_MOIST2,   OUTPUT);
-    pinMode(P_MOIST3,   OUTPUT);
     pinMode(P_TEMP,     OUTPUT);
+
+    Wire.begin();
+    RTC.begin();        // init real time clock
 
     // Uncoment this to automatically set the compile time! Make sure to comment it out again!
     //RTC.adjust(DateTime(__DATE__, __TIME__)); 
@@ -311,6 +306,5 @@ void loop(void)
 #endif
     logFile.println(dateStamp);                 // Write data to the logfile
     logFile.flush();                            // Save changes on the sdcard
-    //sleep(30);                                  // Power down for 30min
-    delay(1000);
+    sleep(30);                                  // Power down for 30min
 }
